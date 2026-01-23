@@ -77,8 +77,8 @@ export function Todos() {
   async function onTodoDelete(todoId) {
     try {
       const accessToken = await getAccessTokenSilently({
-        audience: 'https://todo-api',
-        scope: 'delete:todo'
+        audience: `https://y12yfazgkj.execute-api.us-east-1.amazonaws.com/dev`,
+        scope: 'read:todo write:todo delete:todo'
       })
       await deleteTodo(accessToken, todoId)
       setTodos(todos.filter((todo) => todo.todoId !== todoId))
@@ -91,8 +91,8 @@ export function Todos() {
     try {
       const todo = todos[pos]
       const accessToken = await getAccessTokenSilently({
-        audience: 'https://todo-api',
-        scope: 'write:todo'
+        audience: `https://y12yfazgkj.execute-api.us-east-1.amazonaws.com/dev`,
+        scope: 'read:todo write:todo delete:todo'
       })
       await patchTodo(accessToken, todo.todoId, {
         name: todo.name,
@@ -128,8 +128,8 @@ export function Todos() {
     async function foo() {
       try {
         const accessToken = await getAccessTokenSilently({
-          audience: 'https://todo-api',
-          scope: 'read:todo'
+          audience: `https://y12yfazgkj.execute-api.us-east-1.amazonaws.com/dev`,
+          scope: 'read:todo write:todo delete:todo'
         })
         console.log('Access token: ' + accessToken)
         const todos = await getTodos(accessToken)
