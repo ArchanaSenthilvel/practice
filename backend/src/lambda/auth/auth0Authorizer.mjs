@@ -1,22 +1,17 @@
-import { CustomAuthorizerEvent, CustomAuthorizerResult } from 'aws-lambda'
-import 'source-map-support/register'
-import { verify, decode } from 'jsonwebtoken'
+
 import Axios from 'axios'
+import jwt from 'jsonwebtoken'
+import { createLogger } from '../../utils/logger.mjs'
 
-// IMPORTANT: Replace with YOUR Auth0 domain
-const auth0Domain = 'dev-0qycn7y76i5r6i1x.us.auth0.com'
-const jwksUrl = `https://${auth0Domain}/.well-known/jwks.json`
+const logger = createLogger('auth')
 
-let cachedCertificate: string | null = null
+const jwksUrl = process.env.AUTH_0_JWKS_URL
+const issuer = process.env.AUTH_0_ISSUER
+const audience = process.env.AUTH_0_AUDIENCE
 
-export const handler = async (
-  event: CustomAuthorizerEvent
-): Promise<CustomAuthorizerResult> => {
-  console.log('Authorizing a user', event.authorizationToken)
-  
+export async function handler(event) {
   try {
     const jwtToken = await verifyToken(event.authorizationToken)
-    console.log('User was authorized', jwtToken)
 
     return {
       principalId: jwtToken.sub,
@@ -26,13 +21,13 @@ export const handler = async (
           {
             Action: 'execute-api:Invoke',
             Effect: 'Allow',
-            Resource: '*'
+            Resource: '*'   
           }
         ]
       }
     }
   } catch (e) {
-    console.error('User not authorized', { error: e.message })
+    logger.error('User not authorized', { error: e.message })
 
     return {
       principalId: 'user',
@@ -50,74 +45,46 @@ export const handler = async (
   }
 }
 
-async function verifyToken(authHeader: string): Promise<any> {
+async function verifyToken(authHeader) {
   const token = getToken(authHeader)
-  const jwt: any = decode(token, { complete: true })
 
-  if (!jwt) {
-    throw new Error('Invalid token')
-  }
+  return new Promise(async (resolve, reject) => {
+    try {
+      const decoded = jwt.decode(token, { complete: true })
+      if (!decoded) return reject(new Error('Invalid token'))
 
-  console.log('JWT decoded', jwt)
+      const kid = decoded.header.kid
 
-  // Get certificate
-  const cert = await getCertificate(jwt.header.kid)
-  
-  // Verify the token
-  const verifiedToken = verify(token, cert, { algorithms: ['RS256'] })
-  
-  console.log('Token verified successfully')
-  
-  return verifiedToken
+      const response = await Axios.get(jwksUrl)
+      const key = response.data.keys.find(k => k.kid === kid)
+      if (!key) return reject(new Error('Signing key not found'))
+
+      const cert = key.x5c[0]
+      const publicKey = `-----BEGIN CERTIFICATE-----
+${cert}
+-----END CERTIFICATE-----`
+
+      const options = {
+        audience: audience,
+        issuer: issuer,
+        algorithms: ['RS256']
+      }
+
+      jwt.verify(token, publicKey, options, (err, verifiedToken) => {
+        if (err) reject(err)
+        else resolve(verifiedToken)
+      })
+    } catch (err) {
+      reject(err)
+    }
+  })
 }
 
-async function getCertificate(kid: string): Promise<string> {
-  // Return cached certificate if available
-  if (cachedCertificate) {
-    return cachedCertificate
-  }
+function getToken(authHeader) {
+  if (!authHeader) throw new Error('No authentication header')
 
-  console.log('Downloading certificate from', jwksUrl)
-
-  try {
-    const response = await Axios.get(jwksUrl)
-    const keys = response.data.keys
-
-    if (!keys || !keys.length) {
-      throw new Error('No keys found in JWKS')
-    }
-
-    // Find the key that matches the kid
-    const signingKey = keys.find((key: any) => key.kid === kid)
-
-    if (!signingKey) {
-      throw new Error(`Unable to find a signing key that matches kid: ${kid}`)
-    }
-
-    // Get the PEM formatted certificate
-    const cert = `-----BEGIN CERTIFICATE-----\n${signingKey.x5c[0]}\n-----END CERTIFICATE-----`
-    
-    // Cache the certificate
-    cachedCertificate = cert
-    
-    return cert
-  } catch (error) {
-    console.error('Error getting certificate:', error)
-    throw new Error('Failed to get signing certificate')
-  }
-}
-
-function getToken(authHeader: string): string {
-  if (!authHeader) {
-    throw new Error('No authentication header')
-  }
-
-  if (!authHeader.toLowerCase().startsWith('bearer ')) {
+  if (!authHeader.toLowerCase().startsWith('bearer '))
     throw new Error('Invalid authentication header')
-  }
 
-  const split = authHeader.split(' ')
-  const token = split[1]
-
-  return token
+  return authHeader.split(' ')[1]
 }
