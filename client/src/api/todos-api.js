@@ -1,6 +1,6 @@
 import Axios from 'axios'
 
-export async function getTodos(idToken) {
+export async function getTodos(accessToken) {
   console.log('Fetching todos')
 
   const response = await Axios.get(
@@ -8,7 +8,7 @@ export async function getTodos(idToken) {
     {
       headers: {
         'Content-Type': 'application/json',
-        Authorization: `Bearer ${idToken}`
+        Authorization: `Bearer ${accessToken}`
       }
     }
   )
@@ -16,50 +16,50 @@ export async function getTodos(idToken) {
   return response.data.items
 }
 
-export async function createTodo(idToken, newTodo) {
+export async function createTodo(accessToken, newTodo) {
   const response = await Axios.post(
     `${process.env.REACT_APP_API_ENDPOINT}/todos`,
     JSON.stringify(newTodo),
     {
       headers: {
         'Content-Type': 'application/json',
-        Authorization: `Bearer ${idToken}`
+        Authorization: `Bearer ${accessToken}`
       }
     }
   )
   return response.data.item
 }
 
-export async function patchTodo(idToken, todoId, updatedTodo) {
+export async function patchTodo(accessToken, todoId, updatedTodo) {
   await Axios.patch(
     `${process.env.REACT_APP_API_ENDPOINT}/todos/${todoId}`,
     JSON.stringify(updatedTodo),
     {
       headers: {
         'Content-Type': 'application/json',
-        Authorization: `Bearer ${idToken}`
+        Authorization: `Bearer ${accessToken}`
       }
     }
   )
 }
 
-export async function deleteTodo(idToken, todoId) {
+export async function deleteTodo(accessToken, todoId) {
   await Axios.delete(`${process.env.REACT_APP_API_ENDPOINT}/todos/${todoId}`, {
     headers: {
       'Content-Type': 'application/json',
-      Authorization: `Bearer ${idToken}`
+      Authorization: `Bearer ${accessToken}`
     }
   })
 }
 
-export async function getUploadUrl(idToken, todoId) {
+export async function getUploadUrl(accessToken, todoId) {
   const response = await Axios.post(
     `${process.env.REACT_APP_API_ENDPOINT}/todos/${todoId}/attachment`,
     '',
     {
       headers: {
         'Content-Type': 'application/json',
-        Authorization: `Bearer ${idToken}`
+        Authorization: `Bearer ${accessToken}`
       }
     }
   )
