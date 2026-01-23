@@ -1,47 +1,65 @@
-import 'source-map-support/register'
+import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
+import { DynamoDBDocumentClient, QueryCommand } from "@aws-sdk/lib-dynamodb";
 
-import { APIGatewayProxyEvent, APIGatewayProxyResult } from 'aws-lambda'
-import * as middy from 'middy'
-import { cors } from 'middy/middlewares'
+const TODOS_TABLE = process.env.TODOS_TABLE;
+const TODOS_CREATED_AT_INDEX = process.env.TODOS_CREATED_AT_INDEX;
+const WEB_ORIGIN = process.env.WEB_ORIGIN || "*";
 
-import { getTodosForUser } from '../../businessLogic/todos'
-import { getUserId } from '../utils'
+const docClient = DynamoDBDocumentClient.from(new DynamoDBClient({}));
 
-export const handler = middy(
-  async (event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult> => {
-    // TODO: Get all TODO items for a current user
-    try {
-      const userId = getUserId(event)
-      const todos = await getTodosForUser(userId)
+const getCorsHeaders = () => ({
+  "Access-Control-Allow-Origin": WEB_ORIGIN,
+  "Access-Control-Allow-Credentials": true,
+  "Access-Control-Allow-Headers": "Content-Type,Authorization,X-Amz-Date,X-Api-Key,X-Amz-Security-Token",
+  "Access-Control-Allow-Methods": "OPTIONS,GET,POST,PATCH,DELETE"
+});
 
-      return {
-        statusCode: 200,
-        headers: {
-          'Access-Control-Allow-Origin': '*',
-          'Access-Control-Allow-Credentials': true
+function extractUserId(event) {
+  return (
+    event?.requestContext?.authorizer?.principalId ||
+    event?.requestContext?.authorizer?.jwt?.claims?.sub ||
+    event?.requestContext?.authorizer?.claims?.sub ||
+    null
+  );
+}
+
+export const handler = async (event) => {
+  if (event.httpMethod === "OPTIONS") {
+    return { statusCode: 204, headers: getCorsHeaders(), body: "" };
+  }
+
+  const userId = extractUserId(event);
+  if (!userId) {
+    return {
+      statusCode: 401,
+      headers: getCorsHeaders(),
+      body: JSON.stringify({ error: "Unauthorized" })
+    };
+  }
+
+  try {
+    const result = await docClient.send(
+      new QueryCommand({
+        TableName: TODOS_TABLE,
+        IndexName: TODOS_CREATED_AT_INDEX,
+        KeyConditionExpression: "userId = :uid",
+        ExpressionAttributeValues: {
+          ":uid": userId
         },
-        body: JSON.stringify({
-          items: todos
-        })
-      }
-    } catch (error) {
-      console.error('Error fetching todos:', error)
-      return {
-        statusCode: 500,
-        headers: {
-          'Access-Control-Allow-Origin': '*',
-          'Access-Control-Allow-Credentials': true
-        },
-        body: JSON.stringify({
-          error: 'Failed to fetch todos'
-        })
-      }
-    }
-    }
-)
+        ScanIndexForward: false
+      })
+    );
 
-handler.use(
-  cors({
-    credentials: true
-  })
-)
+    return {
+      statusCode: 200,
+      headers: getCorsHeaders(),
+      body: JSON.stringify({ items: result.Items || [] })
+    };
+  } catch (error) {
+    return {
+      statusCode: 500,
+      headers: getCorsHeaders(),
+      body: JSON.stringify({ error: error.message })
+    };
+  }
+};
