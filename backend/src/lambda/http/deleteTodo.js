@@ -1,48 +1,61 @@
-import 'source-map-support/register'
+import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
+import { DynamoDBDocumentClient, DeleteCommand } from "@aws-sdk/lib-dynamodb";
 
-import { APIGatewayProxyEvent, APIGatewayProxyResult } from 'aws-lambda'
-import * as middy from 'middy'
-import { cors, httpErrorHandler } from 'middy/middlewares'
+const TODOS_TABLE = process.env.TODOS_TABLE;
+const WEB_ORIGIN = process.env.WEB_ORIGIN || "*";
 
-import { deleteTodo } from '../../businessLogic/todos'
-import { getUserId } from '../utils'
+const docClient = DynamoDBDocumentClient.from(new DynamoDBClient({}));
 
-export const handler = middy(
-  async (event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult> => {
-    const todoId = event.pathParameters.todoId
-    // TODO: Remove a TODO item by id
-    try{
-      const userId = getUserId(event)
-      await deleteTodo(userId, todoId)
+const getCorsHeaders = () => ({
+  "Access-Control-Allow-Origin": WEB_ORIGIN,
+  "Access-Control-Allow-Credentials": true,
+  "Access-Control-Allow-Headers": "Content-Type,Authorization,X-Amz-Date,X-Api-Key,X-Amz-Security-Token",
+  "Access-Control-Allow-Methods": "OPTIONS,GET,POST,PATCH,DELETE"
+});
 
-      return {
-        statusCode: 204,
-        headers: {
-          'Access-Control-Allow-Origin': '*',
-          'Access-Control-Allow-Credentials': true
-        },
-        body: ''
-      }
-    } catch (error) {
-      console.error('Error fetching todos:', error)
-      return {
-        statusCode: 500,
-        headers: {
-          'Access-Control-Allow-Origin': '*',
-          'Access-Control-Allow-Credentials': true
-        },
-        body: JSON.stringify({
-          error: 'Failed to fetch todos'
-        })
-      }
-    }  
+function extractUserId(event) {
+  return (
+    event?.requestContext?.authorizer?.principalId ||
+    event?.requestContext?.authorizer?.jwt?.claims?.sub ||
+    event?.requestContext?.authorizer?.claims?.sub ||
+    null
+  );
+}
+
+export const handler = async (event) => {
+  if (event.httpMethod === "OPTIONS") {
+    return { statusCode: 204, headers: getCorsHeaders(), body: "" };
   }
-)
 
-handler
-  .use(httpErrorHandler())
-  .use(
-    cors({
-      credentials: true
-    })
-  )
+  const userId = extractUserId(event);
+  const todoId = event.pathParameters?.todoId;
+
+  if (!userId || !todoId) {
+    return {
+      statusCode: 400,
+      headers: getCorsHeaders(),
+      body: JSON.stringify({ error: "Invalid request" })
+    };
+  }
+
+  try {
+    await docClient.send(
+      new DeleteCommand({
+        TableName: TODOS_TABLE,
+        Key: { userId, todoId }
+      })
+    );
+
+    return {
+      statusCode: 204,
+      headers: getCorsHeaders(),
+      body: ""
+    };
+  } catch (error) {
+    return {
+      statusCode: 500,
+      headers: getCorsHeaders(),
+      body: JSON.stringify({ error: error.message })
+    };
+  }
+};
