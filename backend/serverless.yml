@@ -1,187 +1,149 @@
 service: serverless-todo-app
-useDotenv: true
+frameworkVersion: '4'
 
 plugins:
   - serverless-iam-roles-per-function
-  # - serverless-dotenv-plugin
 
-
-frameworkVersion: '3'
 provider:
   name: aws
-  runtime: nodejs18.x
-
-  stage: ${opt:stage, 'dev'}
-  region: ${opt:region, 'us-east-1'}
-
-  httpApi:
-    cors:
-      allowedOrigins:
-        - http://localhost:3000
-      allowedHeaders:
-        - Content-Type
-        - Authorization
-      allowedMethods:
-        - GET
-        - POST
-        - PUT
-        - PATCH
-        - DELETE
-        - OPTIONS
-
-
-  tracing:
-    lambda: true
-    apiGateway: false
-
-  # TODO: Add environment variables here
+  runtime: nodejs20.x
+  region: us-east-1
   environment:
-    TODOS_TABLE: Todos-${self:provider.stage}
+    TODOS_TABLE: Todos-${sls:stage}
     TODOS_CREATED_AT_INDEX: CreatedAtIndex
-    ATTACHMENT_S3_BUCKET: serverless-c4-todo-images-${self:provider.stage}
+    WEB_ORIGIN: https://todo-app-chi-livid.vercel.app
+    ATTACHMENT_S3_BUCKET: serverless-c4-todo-images-${sls:stage}-123
     SIGNED_URL_EXPIRATION: 300
-    AUTH0_DOMAIN: ${env:AUTH0_DOMAIN}
-    AUTH0_AUDIENCE: ${env:AUTH0_AUDIENCE}
+    AUTH0_JWKS_URL: https://dev-0qycn7y76i5r6i1x.us.auth0.com/.well-known/jwks.json
+    AUTH0_ISSUER: https://dev-0qycn7y76i5r6i1x.us.auth0.com/
+    AUTH0_AUDIENCE: https://y12yfazgkj.execute-api.us-east-1.amazonaws.com/dev
+    AUTH0_DOMAIN: dev-0qycn7y76i5r6i1x.us.auth0.com
 
-  logs:
-    restApi: false
 
-  iam:
-    role:
-      statements:
-        - Effect: Allow
-          Action:
-            - xray:PutTelemetryRecords
-            - xray:PutTraceSegments
-          Resource: "*"
-  
-  
 functions:
-
   Auth:
     handler: src/lambda/auth/auth0Authorizer.handler
+    iamRoleStatements: []
 
-  # TODO: Configure this function
   GetTodos:
     handler: src/lambda/http/getTodos.handler
+    iamRoleStatements:
+      - Effect: Allow
+        Action:
+          - dynamodb:Query
+        Resource:
+          - arn:aws:dynamodb:${self:provider.region}:*:table/Todos-${sls:stage}
+          - arn:aws:dynamodb:${self:provider.region}:*:table/Todos-${sls:stage}/index/CreatedAtIndex
     events:
       - http:
           method: get
           path: todos
-          cors: true
-          #authorizer: Auth
-    # TODO: Add iamRoleStatements
-    iamRoleStatements:
-      - Effect: Allow
-        Action:
-          - dynamodb:Query
-        Resource: arn:aws:dynamodb:${self:provider.region}:*:table/${self:provider.environment.TODOS_TABLE}
-      - Effect: Allow
-        Action:
-          - dynamodb:Query
-        Resource: arn:aws:dynamodb:${self:provider.region}:*:table/${self:provider.environment.TODOS_TABLE}/index/${self:provider.environment.TODOS_CREATED_AT_INDEX}
-      - Effect: Allow
-        Action:
-          - xray:PutTraceSegments
-        Resource: "*"
-
-  # TODO: Configure this function
+          authorizer: 
+            name: Auth
+            resultTtlInSeconds: 0
+          cors:
+            origin: https://todo-app-chi-livid.vercel.app
+            headers:
+              - Content-Type
+              - Authorization
+            allowCredentials: true  
+    
   CreateTodo:
     handler: src/lambda/http/createTodo.handler
-    events:
-      - http:
-          method: post
-          path: todos
-          cors: true
-          #authorizer: Auth
     iamRoleStatements:
       - Effect: Allow
         Action:
           - dynamodb:PutItem
-        Resource: arn:aws:dynamodb:${self:provider.region}:*:table/${self:provider.environment.TODOS_TABLE}
-      - Effect: Allow
-        Action:
-          - xray:PutTraceSegments
-        Resource: "*"
-
-  # TODO: Configure this function
-  UpdateTodo:
-    handler: src/lambda/http/updateTodo.handler
+        Resource:
+          - arn:aws:dynamodb:${self:provider.region}:*:table/Todos-${sls:stage}
     events:
       - http:
-          method: patch
-          path: todos/{todoId}
-          cors: true
-          authorizer: Auth
+          method: post
+          path: todos
+          authorizer: 
+            name: Auth
+            resultTtlInSeconds: 0
+          cors:
+            origin: https://todo-app-chi-livid.vercel.app
+            headers:
+              - Content-Type
+              - Authorization
+            allowCredentials: true
+
+  UpdateTodo:
+    handler: src/lambda/http/updateTodo.handler
     iamRoleStatements:
       - Effect: Allow
         Action:
           - dynamodb:UpdateItem
-        Resource: arn:aws:dynamodb:${self:provider.region}:*:table/${self:provider.environment.TODOS_TABLE}
-      - Effect: Allow
-        Action:
-          - xray:PutTraceSegments
-        Resource: "*"
-
-  # TODO: Configure this function
-  DeleteTodo:
-    handler: src/lambda/http/deleteTodo.handler
+        Resource:
+          - arn:aws:dynamodb:${self:provider.region}:*:table/Todos-${sls:stage}
     events:
       - http:
-          method: delete
+          method: patch
           path: todos/{todoId}
-          cors: true
-          authorizer: Auth
+          authorizer: 
+            name: Auth
+            resultTtlInSeconds: 0
+          cors:
+            origin: https://todo-app-chi-livid.vercel.app
+            headers:
+              - Content-Type
+              - Authorization
+            allowCredentials: true
+
+  DeleteTodo:
+    handler: src/lambda/http/deleteTodo.handler
     iamRoleStatements:
       - Effect: Allow
         Action:
           - dynamodb:DeleteItem
-        Resource: arn:aws:dynamodb:${self:provider.region}:*:table/${self:provider.environment.TODOS_TABLE}
-      - Effect: Allow
-        Action:
-          - xray:PutTraceSegments
-        Resource: "*"
-
-  # TODO: Configure this function
-  GenerateUploadUrl:
-    handler: src/lambda/http/generateUploadUrl.handler
+        Resource:
+          - arn:aws:dynamodb:${self:provider.region}:*:table/Todos-${sls:stage}
     events:
       - http:
-          method: post
-          path: todos/{todoId}/attachment
-          cors: true
-          authorizer: Auth
+          method: delete
+          path: todos/{todoId}
+          authorizer: 
+            name: Auth
+            resultTtlInSeconds: 0
+          cors:
+            origin: https://todo-app-chi-livid.vercel.app
+            headers:
+              - Content-Type
+              - Authorization
+            allowCredentials: true
+
+  GenerateUploadUrl:
+    handler: src/lambda/http/generateUploadUrl.handler
     iamRoleStatements:
       - Effect: Allow
         Action:
           - s3:PutObject
           - s3:GetObject
-        Resource: arn:aws:s3:::${self:provider.environment.ATTACHMENT_S3_BUCKET}/*
+        Resource:
+          - arn:aws:s3:::serverless-c4-todo-images-${sls:stage}-123
+          - arn:aws:s3:::serverless-c4-todo-images-${sls:stage}-123/*
       - Effect: Allow
         Action:
           - dynamodb:UpdateItem
-        Resource: arn:aws:dynamodb:${self:provider.region}:*:table/${self:provider.environment.TODOS_TABLE}
-      - Effect: Allow
-        Action:
-          - xray:PutTraceSegments
-        Resource: "*"
-
-
+        Resource:
+          - arn:aws:dynamodb:${self:provider.region}:*:table/Todos-${sls:stage}
+    events:
+      - http:
+          method: post
+          path: todos/{todoId}/attachment
+          authorizer: 
+            name: Auth
+            resultTtlInSeconds: 0
+          cors:
+            origin: https://todo-app-chi-livid.vercel.app
+            headers:
+              - Content-Type
+              - Authorization
+            allowCredentials: true
 resources:
   Resources:
-    # TODO: Add necessary AWS resources
-    
-    GatewayResponseDefault4XX:
-      Type: AWS::ApiGateway::GatewayResponse
-      Properties:
-        ResponseParameters:
-          gatewayresponse.header.Access-Control-Allow-Origin: "'*'"
-          gatewayresponse.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
-          gatewayresponse.header.Access-Control-Allow-Methods: "'GET,OPTIONS,POST'"
-        ResponseType: DEFAULT_4XX
-        RestApiId:
-          Ref: ApiGatewayRestApi
-
     TodosTable:
       Type: AWS::DynamoDB::Table
       Properties:
@@ -198,9 +160,9 @@ resources:
           - AttributeName: todoId
             KeyType: RANGE
         BillingMode: PAY_PER_REQUEST
-        TableName: ${self:provider.environment.TODOS_TABLE}
+        TableName: Todos-${sls:stage}
         LocalSecondaryIndexes:
-          - IndexName: ${self:provider.environment.TODOS_CREATED_AT_INDEX}
+          - IndexName: CreatedAtIndex
             KeySchema:
               - AttributeName: userId
                 KeyType: HASH
@@ -212,7 +174,7 @@ resources:
     AttachmentsBucket:
       Type: AWS::S3::Bucket
       Properties:
-        BucketName: ${self:provider.environment.ATTACHMENT_S3_BUCKET}
+        BucketName: serverless-c4-todo-images-${sls:stage}-123
         CorsConfiguration:
           CorsRules:
             - AllowedOrigins:
@@ -226,3 +188,23 @@ resources:
                 - DELETE
                 - HEAD
               MaxAge: 3000
+    
+    GatewayResponseDefault4XX:
+      Type: AWS::ApiGateway::GatewayResponse
+      Properties:
+        ResponseType: DEFAULT_4XX
+        RestApiId:
+          Ref: ApiGatewayRestApi
+        ResponseParameters:
+          gatewayresponse.header.Access-Control-Allow-Origin: "'*'"
+          gatewayresponse.header.Access-Control-Allow-Headers: "'*'"
+
+    GatewayResponseDefault5XX:
+      Type: AWS::ApiGateway::GatewayResponse
+      Properties:
+        ResponseType: DEFAULT_5XX
+        RestApiId:
+          Ref: ApiGatewayRestApi
+        ResponseParameters:
+          gatewayresponse.header.Access-Control-Allow-Origin: "'*'"
+          gatewayresponse.header.Access-Control-Allow-Headers: "'*'"
